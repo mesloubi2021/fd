@@ -8,6 +8,7 @@ use crate::filetypes::FileTypes;
 #[cfg(unix)]
 use crate::filter::OwnerFilter;
 use crate::filter::{SizeFilter, TimeFilter};
+use crate::fmt::FormatTemplate;
 
 /// Configuration options for *fd*.
 pub struct Config {
@@ -74,6 +75,7 @@ pub struct Config {
     pub ls_colors: Option<LsColors>,
 
     /// Whether or not we are writing to an interactive terminal
+    #[cfg_attr(not(unix), allow(unused))]
     pub interactive_terminal: bool,
 
     /// The type of file to search for. If set to `None`, all file types are displayed. If
@@ -84,6 +86,9 @@ pub struct Config {
     ///
     /// The value (if present) will be a lowercase string without leading dots.
     pub extensions: Option<RegexSet>,
+
+    /// A format string to use to format results, similarly to exec
+    pub format: Option<FormatTemplate>,
 
     /// If a value is supplied, each item found will be used to generate and execute commands.
     pub command: Option<Arc<CommandSet>>,
@@ -122,6 +127,9 @@ pub struct Config {
 
     /// Whether or not to strip the './' prefix for search results
     pub strip_cwd_prefix: bool,
+
+    /// Whether or not to use hyperlinks on paths
+    pub hyperlink: bool,
 }
 
 impl Config {

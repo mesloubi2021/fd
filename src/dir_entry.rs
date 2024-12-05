@@ -8,11 +8,13 @@ use lscolors::{Colorable, LsColors, Style};
 use crate::config::Config;
 use crate::filesystem::strip_current_dir;
 
+#[derive(Debug)]
 enum DirEntryInner {
     Normal(ignore::DirEntry),
     BrokenSymlink(PathBuf),
 }
 
+#[derive(Debug)]
 pub struct DirEntry {
     inner: DirEntryInner,
     metadata: OnceCell<Option<Metadata>>,
@@ -111,7 +113,7 @@ impl Eq for DirEntry {}
 impl PartialOrd for DirEntry {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.path().partial_cmp(other.path())
+        Some(self.cmp(other))
     }
 }
 

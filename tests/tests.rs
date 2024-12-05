@@ -595,10 +595,7 @@ fn test_full_path() {
     let prefix = escape(&root.to_string_lossy());
 
     te.assert_output(
-        &[
-            "--full-path",
-            &format!("^{prefix}.*three.*foo$", prefix = prefix),
-        ],
+        &["--full-path", &format!("^{prefix}.*three.*foo$")],
         "one/two/three/d.foo
         one/two/three/directory_foo/",
     );
@@ -1311,7 +1308,8 @@ fn test_type_executable() {
     let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
 
     fs::OpenOptions::new()
-        .create(true)
+        .create_new(true)
+        .truncate(true)
         .write(true)
         .mode(0o777)
         .open(te.test_root().join("executable-file.sh"))
@@ -1319,6 +1317,7 @@ fn test_type_executable() {
 
     fs::OpenOptions::new()
         .create(true)
+        .truncate(true)
         .write(true)
         .mode(0o645)
         .open(te.test_root().join("not-user-executable-file.sh"))
@@ -1516,7 +1515,7 @@ fn test_symlink_as_absolute_root() {
     let (te, abs_path) = get_test_env_with_abs_path(DEFAULT_DIRS, DEFAULT_FILES);
 
     te.assert_output(
-        &["", &format!("{abs_path}/symlink", abs_path = abs_path)],
+        &["", &format!("{abs_path}/symlink")],
         &format!(
             "{abs_path}/symlink/c.foo
             {abs_path}/symlink/C.Foo2
@@ -1541,7 +1540,7 @@ fn test_symlink_and_full_path() {
         &[
             "--absolute-path",
             "--full-path",
-            &format!("^{prefix}.*three", prefix = prefix),
+            &format!("^{prefix}.*three"),
         ],
         &format!(
             "{abs_path}/{expected_path}/three/
@@ -1561,8 +1560,8 @@ fn test_symlink_and_full_path_abs_path() {
     te.assert_output(
         &[
             "--full-path",
-            &format!("^{prefix}.*symlink.*three", prefix = prefix),
-            &format!("{abs_path}/symlink", abs_path = abs_path),
+            &format!("^{prefix}.*symlink.*three"),
+            &format!("{abs_path}/symlink"),
         ],
         &format!(
             "{abs_path}/symlink/three/
@@ -1619,6 +1618,66 @@ fn test_excludes() {
         one/two/three/
         one/two/three/directory_foo/
         symlink",
+    );
+}
+
+#[test]
+fn format() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+
+    te.assert_output(
+        &["--format", "path={}", "--path-separator=/"],
+        "path=a.foo
+        path=e1 e2
+        path=one
+        path=one/b.foo
+        path=one/two
+        path=one/two/C.Foo2
+        path=one/two/c.foo
+        path=one/two/three
+        path=one/two/three/d.foo
+        path=one/two/three/directory_foo
+        path=symlink",
+    );
+
+    te.assert_output(
+        &["foo", "--format", "noExt={.}", "--path-separator=/"],
+        "noExt=a
+        noExt=one/b
+        noExt=one/two/C
+        noExt=one/two/c
+        noExt=one/two/three/d
+        noExt=one/two/three/directory_foo",
+    );
+
+    te.assert_output(
+        &["foo", "--format", "basename={/}", "--path-separator=/"],
+        "basename=a.foo
+        basename=b.foo
+        basename=C.Foo2
+        basename=c.foo
+        basename=d.foo
+        basename=directory_foo",
+    );
+
+    te.assert_output(
+        &["foo", "--format", "name={/.}", "--path-separator=/"],
+        "name=a
+        name=b
+        name=C
+        name=c
+        name=d
+        name=directory_foo",
+    );
+
+    te.assert_output(
+        &["foo", "--format", "parent={//}", "--path-separator=/"],
+        "parent=.
+        parent=one
+        parent=one/two
+        parent=one/two
+        parent=one/two/three
+        parent=one/two/three",
     );
 }
 
@@ -2275,7 +2334,7 @@ fn test_owner_current_user() {
 fn test_owner_current_group() {
     let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
     let gid = Gid::current();
-    te.assert_output(&["--owner", &format!(":{}", gid), "a.foo"], "a.foo");
+    te.assert_output(&["--owner", &format!(":{gid}"), "a.foo"], "a.foo");
     if let Ok(Some(group)) = Group::from_gid(gid) {
         te.assert_output(&["--owner", &format!(":{}", group.name), "a.foo"], "a.foo");
     }
@@ -2465,6 +2524,7 @@ fn test_number_parsing_errors() {
     te.assert_failure(&["--threads=0"]);
 
     te.assert_failure(&["--min-depth=a"]);
+    te.assert_failure(&["--mindepth=a"]);
     te.assert_failure(&["--max-depth=a"]);
     te.assert_failure(&["--maxdepth=a"]);
     te.assert_failure(&["--exact-depth=a"]);
@@ -2553,7 +2613,7 @@ fn test_invalid_cwd() {
         .unwrap();
 
     if !output.status.success() {
-        panic!("{:?}", output);
+        panic!("{output:?}");
     }
 }
 
@@ -2571,7 +2631,14 @@ fn test_git_dir() {
         ],
     );
 
-    te.assert_output(&["--hidden", "foo"], "");
+    te.assert_output(
+        &["--hidden", "foo"],
+        ".git/one/foo.a
+        .git/.foo
+        .git/a.foo
+        other_dir/.git/foo1
+        nested/dir/.git/foo2",
+    );
     te.assert_output(&["--no-ignore", "foo"], "");
     te.assert_output(
         &["--hidden", "--no-ignore", "foo"],
@@ -2589,4 +2656,35 @@ fn test_git_dir() {
          other_dir/.git/foo1
          nested/dir/.git/foo2",
     );
+}
+
+#[test]
+fn test_gitignore_parent() {
+    let te = TestEnv::new(&["sub"], &[".abc", "sub/.abc"]);
+
+    fs::File::create(te.test_root().join(".gitignore"))
+        .unwrap()
+        .write_all(b".abc\n")
+        .unwrap();
+
+    te.assert_output_subdirectory("sub", &["--hidden"], "");
+    te.assert_output_subdirectory("sub", &["--hidden", "--search-path", "."], "");
+}
+
+#[test]
+fn test_hyperlink() {
+    let te = TestEnv::new(DEFAULT_DIRS, DEFAULT_FILES);
+
+    #[cfg(unix)]
+    let hostname = nix::unistd::gethostname().unwrap().into_string().unwrap();
+    #[cfg(not(unix))]
+    let hostname = "";
+
+    let expected = format!(
+        "\x1b]8;;file://{}{}/a.foo\x1b\\a.foo\x1b]8;;\x1b\\",
+        hostname,
+        get_absolute_root_path(&te),
+    );
+
+    te.assert_output(&["--hyperlink=always", "a.foo"], &expected);
 }

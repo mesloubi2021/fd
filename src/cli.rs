@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -48,8 +49,7 @@ pub struct Opts {
     no_hidden: (),
 
     /// Show search results from files and directories that would otherwise be
-    /// ignored by '.gitignore', '.ignore', '.fdignore', the global ignore file,
-    /// or the default rule that excludes .git/.
+    /// ignored by '.gitignore', '.ignore', '.fdignore', or the global ignore file,
     /// The flag can be overridden with --ignore.
     #[arg(
         long,
@@ -63,7 +63,7 @@ pub struct Opts {
     #[arg(long, overrides_with = "no_ignore", hide = true, action = ArgAction::SetTrue)]
     ignore: (),
 
-    ///Show search results from '.git/' folders and files and directories that
+    ///Show search results from files and directories that
     ///would otherwise be ignored by '.gitignore' files.
     ///The flag can be overridden with --ignore-vcs.
     #[arg(
@@ -275,6 +275,7 @@ pub struct Opts {
         long,
         value_name = "depth",
         hide_short_help = true,
+        alias("mindepth"),
         help = "Only show search results starting at the given depth.",
         long_help
     )]
@@ -313,7 +314,7 @@ pub struct Opts {
 
     /// Filter the search by type:
     /// {n}  'f' or 'file':         regular files
-    /// {n}  'd' or 'directory':    directories
+    /// {n}  'd' or 'dir' or 'directory':    directories
     /// {n}  'l' or 'symlink':      symbolic links
     /// {n}  's' or 'socket':       socket
     /// {n}  'p' or 'pipe':         named pipe (FIFO)
@@ -351,7 +352,7 @@ pub struct Opts {
         value_name = "filetype",
         hide_possible_values = true,
         value_enum,
-        help = "Filter by type: file (f), directory (d), symlink (l), \
+        help = "Filter by type: file (f), directory (d/dir), symlink (l), \
                 executable (x), empty (e), socket (s), pipe (p), \
                 char-device (c), block-device (b)",
         long_help
@@ -398,7 +399,7 @@ pub struct Opts {
 
     /// Filter results based on the file modification time. Files with modification times
     /// greater than the argument are returned. The argument can be provided
-    /// as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min).
+    /// as a specific point in time (YYYY-MM-DD HH:MM:SS or @timestamp) or as a duration (10h, 1d, 35min).
     /// If the time is not specified, it defaults to 00:00:00.
     /// '--change-newer-than', '--newer', or '--changed-after' can be used as aliases.
     ///
@@ -420,7 +421,7 @@ pub struct Opts {
 
     /// Filter results based on the file modification time. Files with modification times
     /// less than the argument are returned. The argument can be provided
-    /// as a specific point in time (YYYY-MM-DD HH:MM:SS) or as a duration (10h, 1d, 35min).
+    /// as a specific point in time (YYYY-MM-DD HH:MM:SS or @timestamp) or as a duration (10h, 1d, 35min).
     /// '--change-older-than' or '--older' can be used as aliases.
     ///
     /// Examples:
@@ -451,6 +452,20 @@ pub struct Opts {
         long_help,
         )]
     pub owner: Option<OwnerFilter>,
+
+    /// Instead of printing the file normally, print the format string with the following placeholders replaced:
+    ///   '{}': path (of the current search result)
+    ///   '{/}': basename
+    ///   '{//}': parent directory
+    ///   '{.}': path without file extension
+    ///   '{/.}': basename without file extension
+    #[arg(
+        long,
+        value_name = "fmt",
+        help = "Print results according to template",
+        conflicts_with = "list_details"
+    )]
+    pub format: Option<String>,
 
     #[command(flatten)]
     pub exec: Exec,
@@ -495,10 +510,28 @@ pub struct Opts {
     )]
     pub color: ColorWhen,
 
+    /// Add a terminal hyperlink to a file:// url for each path in the output.
+    ///
+    /// Auto mode  is used if no argument is given to this option.
+    ///
+    /// This doesn't do anything for --exec and --exec-batch.
+    #[arg(
+        long,
+        alias = "hyper",
+        value_name = "when",
+        require_equals = true,
+        value_enum,
+        default_value_t = HyperlinkWhen::Never,
+        default_missing_value = "auto",
+        num_args = 0..=1,
+        help = "Add hyperlinks to output paths"
+    )]
+    pub hyperlink: HyperlinkWhen,
+
     /// Set number of threads to use for searching & executing (default: number
     /// of available CPU cores)
-    #[arg(long, short = 'j', value_name = "num", hide_short_help = true, value_parser = clap::value_parser!(u32).range(1..))]
-    pub threads: Option<u32>,
+    #[arg(long, short = 'j', value_name = "num", hide_short_help = true, value_parser = str::parse::<NonZeroUsize>)]
+    pub threads: Option<NonZeroUsize>,
 
     /// Milliseconds to buffer before streaming search results to console
     ///
@@ -617,9 +650,10 @@ pub struct Opts {
     /// By default, relative paths are prefixed with './' when -x/--exec,
     /// -X/--exec-batch, or -0/--print0 are given, to reduce the risk of a
     /// path starting with '-' being treated as a command line option. Use
-    /// this flag to disable this behaviour.
-    #[arg(long, conflicts_with_all(&["path", "search_path"]), hide_short_help = true, long_help)]
-    pub strip_cwd_prefix: bool,
+    /// this flag to change this behavior. If this flag is used without a value,
+    /// it is equivalent to passing "always".
+    #[arg(long, conflicts_with_all(&["path", "search_path"]), value_name = "when", hide_short_help = true, require_equals = true, long_help)]
+    strip_cwd_prefix: Option<Option<StripCwdWhen>>,
 
     /// By default, fd will traverse the file system tree as far as other options
     /// dictate. With this flag, fd ensures that it does not descend into a
@@ -642,7 +676,7 @@ impl Opts {
         } else if !self.search_path.is_empty() {
             &self.search_path
         } else {
-            let current_directory = Path::new(".");
+            let current_directory = Path::new("./");
             ensure_current_directory_exists(current_directory)?;
             return Ok(vec![self.normalize_path(current_directory)]);
         };
@@ -665,6 +699,9 @@ impl Opts {
     fn normalize_path(&self, path: &Path) -> PathBuf {
         if self.absolute_path {
             filesystem::absolute_path(path.normalize().unwrap().as_path()).unwrap()
+        } else if path == Path::new(".") {
+            // Change "." to "./" as a workaround for https://github.com/BurntSushi/ripgrep/pull/2711
+            PathBuf::from("./")
         } else {
             path.to_path_buf()
         }
@@ -687,23 +724,24 @@ impl Opts {
         self.min_depth.or(self.exact_depth)
     }
 
-    pub fn threads(&self) -> usize {
-        // This will panic if the number of threads passed in is more than usize::MAX in an environment
-        // where usize is less than 32 bits (for example 16-bit architectures). It's pretty
-        // unlikely fd will be running in such an environment, and even more unlikely someone would
-        // be trying to use that many threads on such an environment, so I think panicing is an
-        // appropriate way to handle that.
-        std::cmp::max(
-            self.threads
-                .map_or_else(num_cpus::get, |n| n.try_into().expect("too many threads")),
-            1,
-        )
+    pub fn threads(&self) -> NonZeroUsize {
+        self.threads.unwrap_or_else(default_num_threads)
     }
 
     pub fn max_results(&self) -> Option<usize> {
         self.max_results
             .filter(|&m| m > 0)
             .or_else(|| self.max_one_result.then_some(1))
+    }
+
+    pub fn strip_cwd_prefix<P: FnOnce() -> bool>(&self, auto_pred: P) -> bool {
+        use self::StripCwdWhen::*;
+        self.no_search_paths()
+            && match self.strip_cwd_prefix.map_or(Auto, |o| o.unwrap_or(Always)) {
+                Auto => auto_pred(),
+                Always => true,
+                Never => false,
+            }
     }
 
     #[cfg(feature = "completions")]
@@ -719,11 +757,25 @@ impl Opts {
     }
 }
 
+/// Get the default number of threads to use, if not explicitly specified.
+fn default_num_threads() -> NonZeroUsize {
+    // If we can't get the amount of parallelism for some reason, then
+    // default to a single thread, because that is safe.
+    let fallback = NonZeroUsize::MIN;
+    // To limit startup overhead on massively parallel machines, don't use more
+    // than 64 threads.
+    let limit = NonZeroUsize::new(64).unwrap();
+
+    std::thread::available_parallelism()
+        .unwrap_or(fallback)
+        .min(limit)
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, ValueEnum)]
 pub enum FileType {
     #[value(alias = "f")]
     File,
-    #[value(alias = "d")]
+    #[value(alias = "d", alias = "dir")]
     Directory,
     #[value(alias = "l")]
     Symlink,
@@ -752,15 +804,24 @@ pub enum ColorWhen {
     Never,
 }
 
-impl ColorWhen {
-    pub fn as_str(&self) -> &'static str {
-        use ColorWhen::*;
-        match *self {
-            Auto => "auto",
-            Never => "never",
-            Always => "always",
-        }
-    }
+#[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
+pub enum StripCwdWhen {
+    /// Use the default behavior
+    Auto,
+    /// Always strip the ./ at the beginning of paths
+    Always,
+    /// Never strip the ./
+    Never,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, ValueEnum)]
+pub enum HyperlinkWhen {
+    /// Use hyperlinks only if color is enabled
+    Auto,
+    /// Always use hyperlinks when printing file paths
+    Always,
+    /// Never use hyperlinks
+    Never,
 }
 
 // there isn't a derive api for getting grouped values yet,

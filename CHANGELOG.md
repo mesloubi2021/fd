@@ -2,14 +2,110 @@
 
 ## Features
 
+- Add a hidden `--mindepth` alias for `--min-depth`. (#1617)
+
+
+## Bugfixes
+
+
+## Changes
+
+
+## Other
+
+
+# 10.2.0
+
+## Features
+
+- Add --hyperlink option to add OSC 8 hyperlinks to output
+
+
+## Bugfixes
+
+
+## Changes
+
+- Build windows releases with rust 1.77 so windows 7 is still supported
+- Deb packages now include symlink for fdfind to be more consistent with official packages
+
+
+## Other
+
+# 10.1.0
+
+## Features
+
+- Allow passing an optional argument to `--strip-cwd-prefix` of "always", "never", or "auto". to force whether the cwd prefix is stripped or not.
+- Add a `--format` option which allows using a format template for direct ouput similar to the template used for `--exec`. (#1043)
+
+## Bugfixes
+- Fix aarch64 page size again. This time it should actually work. (#1085, #1549) (@tavianator)
+
+
+## Other
+
+- aarch64-apple-darwin target added to builds on the release page. Note that this is a tier 2 rust target.
+
+# v10.0.0
+
+## Features
+
+- Add `dir` as an alias to `directory` when using `-t` \ `--type`, see #1460 and #1464 (@Ato2207).
+- Add support for @%s date format in time filters similar to GNU date (seconds since Unix epoch for --older/--newer), see #1493 (@nabellows)
+- Breaking: No longer automatically ignore `.git` when using `--hidden` with vcs ignore enabled. This reverts the change in v9.0.0. While this feature
+  was often useful, it also broke some existing workflows, and there wasn't a good way to opt out of it. And there isn't really a good way for us to add
+  a way to opt out of it. And you can easily get similar behavior by adding `.git/` to your global fdignore file.
+    See #1457.
+
+## Bugfixes
+
+- Respect NO_COLOR environment variable with `--list-details` option. (#1455)
+- Fix bug that would cause hidden files to be included despite gitignore rules
+  if search path is "." (#1461, BurntSushi/ripgrep#2711).
+- aarch64 builds now use 64k page sizes with jemalloc. This fixes issues on some systems, such as ARM Macs that
+  have a larger system page size than the system that the binary was built on. (#1547)
+- Address [CVE-2024-24576](https://blog.rust-lang.org/2024/04/09/cve-2024-24576.html), by increasing minimum rust version.
+
+
+## Changes
+- Minimum supported rust version is now 1.77.2
+
+
+# v9.0.0
+
+## Performance
+
+- Performance has been *significantly improved*, both due to optimizations in the underlying `ignore`
+  crate (#1429), and in `fd` itself (#1422, #1408, #1362) - @tavianator.
+  [Benchmarks results](https://gist.github.com/tavianator/32edbe052f33ef60570cf5456b59de81) show gains
+  of 6-8x for full traversals of smaller directories (100k files) and up to 13x for larger directories (1M files).
+
+- The default number of threads is now constrained to be at most 64. This should improve startup time on
+  systems with many CPU cores. (#1203, #1410, #1412, #1431) - @tmccombs and @tavianator
+
+- New flushing behavior when writing output to stdout, providing better performance for TTY and non-TTY
+  use cases, see #1452 and #1313 (@tavianator).
+
+## Features
+
+- Support character and block device file types, see #1213 and #1336 (@cgzones)
 - Breaking: `.git/` is now ignored by default when using `--hidden` / `-H`, use `--no-ignore` / `-I` or
   `--no-ignore-vcs` to override, see #1387 and #1396 (@skoriop)
 
 ## Bugfixes
 
-## Changes
+- Fix `NO_COLOR` support, see #1421 (@acuteenvy)
 
 ## Other
+
+- Fixed documentation typos, see #1409 (@marcospb19)
+
+## Thanks
+
+Special thanks to @tavianator for his incredible work on performance in the `ignore` crate and `fd` itself.
+
+
 
 # v8.7.1
 
