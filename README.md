@@ -151,6 +151,15 @@ you can match against the full path.
 > fd -p '.*/lesson-\d+/[a-z]+.(jpg|png)'
 ```
 
+### Matching the full path
+By default, *fd* only matches the filename of each file. However, using the `--full-path` or `-p` option,
+you can match against the full path.
+
+```bash
+> fd -p -g '**/.git/config'
+> fd -p '.*/lesson-\d+/[a-z]+.(jpg|png)'
+```
+
 ### Command execution
 
 Instead of just showing the search results, you often want to *do something* with them. `fd`
